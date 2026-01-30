@@ -1,0 +1,104 @@
+import argparse
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.colors import Normalize
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+import os
+
+def load_matrix(path: str) -> pd.DataFrame:
+    df = pd.read_csv(path, sep="\t", index_col=0)
+    if df.shape[0] != df.shape[1]:
+        raise ValueError(f"Matrix is not squared: {df.shape}")
+    return df
+
+def prepare_masks(mat: np.ndarray):
+    n = mat.shape[0]
+    upper_mask = np.triu(np.ones((n,n), dtype=bool), k=0)   # diagonal incluida -> identidade
+    lower_mask = np.tril(np.ones((n,n), dtype=bool), k=-1)  # diagonal excluída -> cobertura
+    identity = np.where(upper_mask, mat, np.nan)
+    coverage = np.where(lower_mask, mat, np.nan)
+    return identity, coverage
+
+def plot_overlay(identity, coverage, labels,
+                 cmap_id='Blues', cmap_cov='Reds',
+                 figsize=(10,10), outpath=None, format_file="pdf", dpi=300):
+    n = identity.shape[0]
+    id_ma = np.ma.masked_invalid(identity)
+    cov_ma = np.ma.masked_invalid(coverage)
+
+    norm_id = Normalize(vmin=np.nanmin(identity), vmax=np.nanmax(identity))
+    norm_cov = Normalize(vmin=np.nanmin(coverage), vmax=np.nanmax(coverage))
+
+    fig, ax = plt.subplots(figsize=figsize)
+    im_id = ax.imshow(id_ma, cmap=cmap_id, interpolation='nearest', norm=norm_id, aspect='equal')
+    im_cov = ax.imshow(cov_ma, cmap=cmap_cov, interpolation='nearest', norm=norm_cov, aspect='equal')
+
+    # ticks e rótulos: x embaixo e y à direita
+    ax.set_xticks(np.arange(n)); ax.set_yticks(np.arange(n))
+    ax.set_xticklabels(labels, rotation=90, fontsize=8)
+    ax.set_yticklabels(labels, fontsize=8)
+    ax.xaxis.tick_bottom()
+    ax.yaxis.tick_right()
+    ax.tick_params(axis='x', which='major', labelbottom=True, labeltop=False)
+    ax.tick_params(axis='y', which='major', labelleft=False, labelright=True)
+
+    ax.set_xticks(np.arange(-.5, n, 1), minor=True)
+    ax.set_yticks(np.arange(-.5, n, 1), minor=True)
+    ax.grid(which='minor', color='white', linestyle='-', linewidth=0.5)
+    ax.tick_params(which="minor", bottom=False, left=False)
+
+    # colorbars: identity no topo (horizontal) com label acima; coverage à esquerda (vertical) com label à esquerda
+    divider = make_axes_locatable(ax)
+    cax_top = divider.append_axes("top", size="3%", pad=0.05)
+    cbar_id = fig.colorbar(im_id, cax=cax_top, orientation='horizontal', fraction=0.025, pad=0.02, shrink=0.8, aspect=20)
+    cbar_id.ax.invert_xaxis()
+    # label acima da barra (horizontal)
+    cbar_id.set_label('Identity', rotation=0, labelpad=0.2, fontsize=9)
+    cbar_id.ax.xaxis.set_label_position('top')
+    cbar_id.ax.xaxis.tick_top()
+    cbar_id.ax.tick_params(labelsize=7)
+
+    cax_left = divider.append_axes("left", size="3%", pad=0.05)
+    cbar_cov = fig.colorbar(im_cov, cax=cax_left, orientation='vertical')
+    # label à esquerda da barra (vertical)
+    cbar_cov.set_label('Coverage', rotation=90, labelpad=0.2, fontsize=9)
+    cbar_cov.ax.yaxis.set_label_position('left')
+    cbar_cov.ax.yaxis.tick_left()
+    cbar_cov.ax.tick_params(labelsize=7)
+
+    ax.set_title('Heatmap — Identity x Coverage', pad=60)
+    plt.tight_layout()
+
+    if outpath:
+        fig.savefig(outpath, dpi=dpi, bbox_inches='tight', format=format_file)
+        print(f"The figure {outpath} was saved")
+    #plt.show()
+    plt.close(fig)
+
+def main():
+    
+    parser = argparse.ArgumentParser(description='A simple program that will create a heatmap figure from a square matrix with coverage and identity from centromeres blastn results.')
+    parser.add_argument('--input_matrix', help='File to process.', required=True)
+    parser.add_argument('--outname', help='The basename of the file after processing.', default="heatmap")
+    parser.add_argument('--color_identity', help='', type=str, default='Blues')
+    parser.add_argument('--color_coverage', help='', type=str, default='Reds')
+    parser.add_argument('--format', help='output figure format', type=str, default='pdf')
+    parser.add_argument('--dpi', help='output figure quality', type=int, default=300)
+
+    args = parser.parse_args()
+    print(args)
+    file = args.input_matrix
+    cmap_id, cmap_cov = args.color_identity, args.color_coverage
+    format_file = args.format
+    output = f"{args.outname}.{format_file}"
+    df = load_matrix(file)
+    mat = df.values.astype(float)
+    labels = df.index.tolist()
+    identity, coverage = prepare_masks(mat)
+
+    plot_overlay(identity, coverage, labels, cmap_id = cmap_id, cmap_cov=cmap_cov,
+                     outpath=output, format_file=format_file, dpi=args.dpi)
+    
+if __name__ == "__main__":
+    main()
